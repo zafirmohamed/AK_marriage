@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AR Video</title>
+  <style>
+    body { margin: 0; }
+    #container { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+
+    #startBtn {
+      position: absolute; z-index: 10;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      padding: 16px 28px; font-size: 18px;
+      border: none; border-radius: 12px;
+      background: #4f46e5; color: #fff;
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div id="container"></div>
+  <button id="startBtn">Tap to Start AR</button>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MindARThree } from 'mindar-image-three';
+
+    // ---- Settings ----
+    const IMG_RATIO = 0.6615;   // unga target image: height / width
+                           // square = 1, 1920x1080 = 0.5625, 1080x1920 = 1.7778
+
+    // ---- Video element ----
+    const video = document.createElement('video');
+    video.src = './video.mp4';
+    video.loop = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.preload = 'auto';
+
+    const start = async () => {
+ const mindarThree = new MindARThree({
+  container: document.querySelector('#container'),
+  imageTargetSrc: './targets.mind',
+  filterMinCF: 0.001,     // default value (munnadi 0.0001)
+  filterBeta: 1000,       // default value (munnadi 10), plane udane follow pannum
+  warmupTolerance: 5,
+  missTolerance: 5
+});
+      const { renderer, scene, camera } = mindarThree;
+
+      // ---- Video texture ----
+      const videoTexture = new THREE.VideoTexture(video);
+      videoTexture.encoding = THREE.sRGBEncoding;
+      videoTexture.flipY = false;   // GLB plane ku idhu sari. Video thalai keela theriyudha na true pannunga
+      const videoMaterial = new THREE.MeshBasicMaterial({
+        map: videoTexture,
+        side: THREE.DoubleSide
+      });
+
+      // ---- Plane GLB load ----
+      const gltf = await new GLTFLoader().loadAsync('./model.glb');
+      const plane = gltf.scene;
+
+      // Ella mesh kum video material podrom
+      plane.traverse((o) => {
+        if (o.isMesh) o.material = videoMaterial;
+      });
+
+      // Plane oda orientation auto detect (sinna dimension = plane oda normal)
+      const raw = new THREE.Box3().setFromObject(plane).getSize(new THREE.Vector3());
+      if (raw.y <= raw.x && raw.y <= raw.z) {
+        plane.rotation.x = Math.PI / 2;    // Blender plane (flat, Y normal)
+      } else if (raw.x <= raw.y && raw.x <= raw.z) {
+        plane.rotation.y = Math.PI / 2;    // X normal
+      }                                    // Z normal na rotation vendaam
+
+      // Pivot group: center + exact size fit
+      const pivot = new THREE.Group();
+      pivot.add(plane);
+      pivot.updateMatrixWorld(true);
+
+      const box = new THREE.Box3().setFromObject(pivot);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      plane.position.sub(center);          // image center la vaikkum
+      pivot.scale.set(1 / size.x, IMG_RATIO / size.y, 1);   // width = 1, height = IMG_RATIO
+      pivot.position.z = 0.001;            // image mela konjam mela (flicker varaadhu)
+
+      // ---- Image target ----
+      const anchor = mindarThree.addAnchor(0);
+      anchor.group.add(pivot);
+
+      anchor.onTargetFound = () => {
+        video.currentTime = 0;
+        video.play();
+      };
+      anchor.onTargetLost = () => {
+        video.pause();
+      };
+
+      await mindarThree.start();
+
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    };
+
+    // Tap pannina apram start (mobile la video unlock ku must)
+    document.querySelector('#startBtn').addEventListener('click', () => {
+      document.querySelector('#startBtn').style.display = 'none';
+      video.play().then(() => video.pause()).catch(() => {});
+      start();
+    });
+  </script>
+</body>
+</html>
