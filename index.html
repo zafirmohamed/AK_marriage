@@ -15,6 +15,19 @@
       border: none; border-radius: 12px;
       background: #4f46e5; color: #fff;
     }
+
+    /* NEW: Play/Pause + Restart buttons */
+    #controls {
+      position: fixed; z-index: 10;
+      left: 50%; transform: translateX(-50%);
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      display: none; gap: 12px;
+    }
+    #controls button {
+      padding: 12px 22px; font-size: 16px;
+      border: none; border-radius: 999px;
+      background: rgba(0, 0, 0, 0.65); color: #fff;
+    }
   </style>
 
   <script type="importmap">
@@ -31,6 +44,12 @@
 <body>
   <div id="container"></div>
   <button id="startBtn">Tap to Start AR</button>
+
+  <!-- NEW: control buttons -->
+  <div id="controls">
+    <button id="playPauseBtn">Pause</button>
+    <button id="restartBtn">Restart</button>
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -49,15 +68,39 @@
     video.setAttribute('playsinline', '');
     video.preload = 'auto';
 
+    // ---- NEW: Play / Pause / Restart logic ----
+    let targetVisible = false;   // image ippo theriyudha
+    let userPaused = false;      // user Pause click pannirukkaara
+
+    const playPauseBtn = document.querySelector('#playPauseBtn');
+    const restartBtn = document.querySelector('#restartBtn');
+
+    const refresh = () => {
+      if (targetVisible && !userPaused) video.play();
+      else video.pause();
+      playPauseBtn.textContent = userPaused ? 'Play' : 'Pause';
+    };
+
+    playPauseBtn.addEventListener('click', () => {
+      userPaused = !userPaused;
+      refresh();
+    });
+
+    restartBtn.addEventListener('click', () => {
+      video.currentTime = 0;
+      userPaused = false;
+      refresh();
+    });
+
     const start = async () => {
- const mindarThree = new MindARThree({
-  container: document.querySelector('#container'),
-  imageTargetSrc: './targets.mind',
-  filterMinCF: 0.001,     // default value (munnadi 0.0001)
-  filterBeta: 1000,       // default value (munnadi 10), plane udane follow pannum
-  warmupTolerance: 5,
-  missTolerance: 5
-});
+      const mindarThree = new MindARThree({
+        container: document.querySelector('#container'),
+        imageTargetSrc: './targets.mind',
+        filterMinCF: 0.001,     // default value (munnadi 0.0001)
+        filterBeta: 1000,       // default value (munnadi 10), plane udane follow pannum
+        warmupTolerance: 5,
+        missTolerance: 5
+      });
       const { renderer, scene, camera } = mindarThree;
 
       // ---- Video texture ----
@@ -104,14 +147,18 @@
       anchor.group.add(pivot);
 
       anchor.onTargetFound = () => {
-        video.currentTime = 0;
-        video.play();
+        targetVisible = true;
+        refresh();
       };
       anchor.onTargetLost = () => {
-        video.pause();
+        targetVisible = false;
+        refresh();
       };
 
       await mindarThree.start();
+
+      // NEW: AR start aana apram buttons kaattum
+      document.querySelector('#controls').style.display = 'flex';
 
       renderer.setAnimationLoop(() => {
         renderer.render(scene, camera);
