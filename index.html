@@ -14,10 +14,13 @@
       background: #000;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      transition: opacity 0.6s ease;
+      transition: opacity 0.6s ease, visibility 0s 0s;
       overflow: hidden;
     }
-    #splash.hide { opacity: 0; pointer-events: none; }
+    #splash.hide {
+      opacity: 0; pointer-events: none; visibility: hidden;
+      transition: opacity 0.6s ease, visibility 0s 0.6s;   /* fade out aana apram hidden (gif battery use panna koodadhu) */
+    }
 
     /* Full screen gif background (center la maximize) */
     #bgGif {
@@ -55,15 +58,15 @@
     }
     #startBtn:disabled { opacity: 0.7; }
 
-    /* ================= PLAY/PAUSE + RESTART ================= */
+    /* ================= BACK BUTTON ================= */
     #controls {
       position: fixed; z-index: 10;
       left: 50%; transform: translateX(-50%);
       bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-      display: none; gap: 12px;
+      display: none;
     }
-    #controls button {
-      padding: 12px 22px; font-size: 16px;
+    #backBtn {
+      padding: 12px 30px; font-size: 16px;
       border: none; border-radius: 999px;
       background: rgba(0, 0, 0, 0.65); color: #fff;
     }
@@ -93,10 +96,9 @@
     <button id="startBtn">Tap to Scan</button>
   </div>
 
-  <!-- control buttons -->
+  <!-- Back button (scan page la) -->
   <div id="controls">
-    <button id="playPauseBtn">Pause</button>
-    <button id="restartBtn">Restart</button>
+    <button id="backBtn">Back</button>
   </div>
 
   <script type="module">
@@ -116,33 +118,17 @@
     video.setAttribute('playsinline', '');
     video.preload = 'auto';
 
-    // ---- Play / Pause / Restart logic ----
-    let targetVisible = false;   // image ippo theriyudha
-    let userPaused = false;      // user Pause click pannirukkaara
+    const startBtn = document.querySelector('#startBtn');
+    const backBtn = document.querySelector('#backBtn');
+    const splash = document.querySelector('#splash');
+    const controls = document.querySelector('#controls');
+    const container = document.querySelector('#container');
 
-    const playPauseBtn = document.querySelector('#playPauseBtn');
-    const restartBtn = document.querySelector('#restartBtn');
-
-    const refresh = () => {
-      if (targetVisible && !userPaused) video.play();
-      else video.pause();
-      playPauseBtn.textContent = userPaused ? 'Play' : 'Pause';
-    };
-
-    playPauseBtn.addEventListener('click', () => {
-      userPaused = !userPaused;
-      refresh();
-    });
-
-    restartBtn.addEventListener('click', () => {
-      video.currentTime = 0;
-      userPaused = false;
-      refresh();
-    });
+    let current = null;   // ippo run aagura AR (back click la stop panna)
 
     const start = async () => {
       const mindarThree = new MindARThree({
-        container: document.querySelector('#container'),
+        container: container,
         imageTargetSrc: './targets.mind',
         filterMinCF: 0.001,     // default value (munnadi 0.0001)
         filterBeta: 1000,       // default value (munnadi 10), plane udane follow pannum
@@ -150,6 +136,7 @@
         missTolerance: 5
       });
       const { renderer, scene, camera } = mindarThree;
+      current = { mindarThree, renderer };
 
       // ---- Video texture ----
       const videoTexture = new THREE.VideoTexture(video);
@@ -195,28 +182,43 @@
       anchor.group.add(pivot);
 
       anchor.onTargetFound = () => {
-        targetVisible = true;
-        refresh();
+        video.play();
       };
       anchor.onTargetLost = () => {
-        targetVisible = false;
-        refresh();
+        video.pause();
       };
 
       await mindarThree.start();
 
-      // AR start aana apram buttons kaattum
-      document.querySelector('#controls').style.display = 'flex';
+      // AR start aana apram Back button kaattum
+      controls.style.display = 'flex';
 
       renderer.setAnimationLoop(() => {
         renderer.render(scene, camera);
       });
     };
 
-    // Tap pannina apram start (mobile la video unlock ku must)
-    const startBtn = document.querySelector('#startBtn');
-    const splash = document.querySelector('#splash');
+    // ---- Back: scan page -> home page ----
+    const goHome = () => {
+      video.pause();
+      video.currentTime = 0;
 
+      if (current) {
+        try { current.mindarThree.stop(); } catch (e) { console.warn(e); }              // camera stop
+        try { current.renderer.setAnimationLoop(null); current.renderer.dispose(); } catch (e) {}
+        current = null;
+      }
+      container.innerHTML = '';          // pazhaya canvas / video / scanning UI clean
+
+      controls.style.display = 'none';
+      startBtn.disabled = false;
+      startBtn.textContent = 'Tap to Scan';
+      splash.classList.remove('hide');   // home page thirumba kaattum
+    };
+
+    backBtn.addEventListener('click', goHome);
+
+    // ---- Tap to Scan ----
     startBtn.addEventListener('click', async () => {
       startBtn.disabled = true;
       startBtn.textContent = 'Loading...';
@@ -226,12 +228,10 @@
 
       try {
         await start();                       // camera + model ready aana apram
-        splash.classList.add('hide');        // start screen fade out
-        setTimeout(() => splash.remove(), 700);
+        splash.classList.add('hide');        // home page fade out
       } catch (e) {
         console.error(e);
-        startBtn.disabled = false;
-        startBtn.textContent = 'Tap to Scan';
+        goHome();
         alert('Camera access Allow pannitu marubadiyum try pannunga');
       }
     });
