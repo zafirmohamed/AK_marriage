@@ -21,8 +21,6 @@
       opacity: 0; pointer-events: none; visibility: hidden;
       transition: opacity 0.6s ease, visibility 0s 0.6s;
     }
-
-    /* Full screen GIF background */
     #bgGif {
       position: absolute; inset: 0;
       overflow: hidden; pointer-events: none;
@@ -32,8 +30,6 @@
       width: 118%; height: 118%;
       background: url('sparkle.gif') center / cover no-repeat;
     }
-
-    /* Logo */
     #logo {
       position: relative; z-index: 1;
       width: min(70vw, 340px); height: auto; display: block;
@@ -45,8 +41,6 @@
       font-size: 54px; letter-spacing: 10px; line-height: 1;
     }
     .logoText small { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 8px; }
-
-    /* Gold button */
     #startBtn {
       position: relative; z-index: 1;
       margin-top: 16vh;
@@ -57,8 +51,6 @@
       box-shadow: 0 0 22px rgba(224, 178, 100, 0.35);
     }
     #startBtn:disabled { opacity: 0.7; }
-
-    /* ================= BACK + PLAY/PAUSE + RESTART ================= */
     #controls {
       position: fixed; z-index: 10;
       left: 50%; transform: translateX(-50%);
@@ -82,11 +74,9 @@
   }
   </script>
 </head>
-
 <body>
   <div id="container"></div>
 
-  <!-- START SCREEN -->
   <div id="splash">
     <div id="bgGif"></div>
     <img id="logo" src="logo.png" alt="ZOAR FRAMES"
@@ -94,7 +84,6 @@
     <button id="startBtn">Tap to Scan</button>
   </div>
 
-  <!-- Control buttons -->
   <div id="controls">
     <button id="backBtn">Back</button>
     <button id="playPauseBtn">Pause</button>
@@ -108,7 +97,6 @@
 
     const IMG_RATIO = 0.6615;
 
-    // ---- Video element ----
     const video = document.createElement('video');
     video.src = './video.mp4';
     video.loop = true;
@@ -116,7 +104,6 @@
     video.setAttribute('playsinline', '');
     video.preload = 'auto';
 
-    // ---- Elements ----
     const startBtn = document.querySelector('#startBtn');
     const backBtn = document.querySelector('#backBtn');
     const playPauseBtn = document.querySelector('#playPauseBtn');
@@ -125,19 +112,16 @@
     const controls = document.querySelector('#controls');
     const container = document.querySelector('#container');
 
-    // ---- Session state ----
     let targetVisible = false;
     let userPaused = false;
     let current = null;
     let sessionId = 0;
     let cleanupPromise = Promise.resolve();
+    let isClosing = false;
 
     const refresh = () => {
-      if (targetVisible && !userPaused) {
-        video.play().catch(() => {});
-      } else {
-        video.pause();
-      }
+      if (targetVisible && !userPaused) video.play().catch(() => {});
+      else video.pause();
       playPauseBtn.textContent = userPaused ? 'Play' : 'Pause';
     };
 
@@ -152,7 +136,45 @@
       refresh();
     });
 
-    // ---- Start one AR session ----
+    // Stop every camera stream attached to a video element.
+    // MindAR creates its own camera video; the video.mp4 element above has no camera stream.
+    const stopCameraTracks = () => {
+      document.querySelectorAll('video').forEach((el) => {
+        const stream = el.srcObject;
+        if (stream && typeof stream.getTracks === 'function') {
+          stream.getTracks().forEach((track) => {
+            try { track.stop(); } catch (_) {}
+          });
+          try { el.pause(); } catch (_) {}
+          try { el.srcObject = null; } catch (_) {}
+        }
+      });
+    };
+
+    const disposeSession = async (session) => {
+      if (!session) return;
+
+      // If camera startup is already underway, wait for it to settle before stopping it.
+      if (session.startPromise) {
+        try { await session.startPromise; } catch (_) {}
+      }
+
+      try { await session.mindarThree.stop(); } catch (error) {
+        console.warn('MindAR stop:', error);
+      }
+
+      // Explicitly stop camera tracks as a fallback to MindAR's stop().
+      stopCameraTracks();
+
+      try {
+        session.renderer.setAnimationLoop(null);
+        session.renderer.dispose();
+        if (session.renderer.forceContextLoss) session.renderer.forceContextLoss();
+      } catch (error) {
+        console.warn('Renderer cleanup:', error);
+      }
+    };
+
     const start = async (id) => {
       const mindarThree = new MindARThree({
         container,
@@ -164,40 +186,30 @@
       });
 
       const { renderer, scene, camera } = mindarThree;
-      const session = { mindarThree, renderer };
+      const session = { mindarThree, renderer, startPromise: null, videoTexture: null, videoMaterial: null };
       current = session;
 
-      let videoTexture = null;
-      let videoMaterial = null;
-
       try {
-        videoTexture = new THREE.VideoTexture(video);
-        videoTexture.encoding = THREE.sRGBEncoding;
-        videoTexture.flipY = false;
+        session.videoTexture = new THREE.VideoTexture(video);
+        session.videoTexture.encoding = THREE.sRGBEncoding;
+        session.videoTexture.flipY = false;
 
-        videoMaterial = new THREE.MeshBasicMaterial({
-          map: videoTexture,
+        session.videoMaterial = new THREE.MeshBasicMaterial({
+          map: session.videoTexture,
           side: THREE.DoubleSide
         });
 
-        // Load the model, then check whether this session was cancelled.
         const gltf = await new GLTFLoader().loadAsync('./model.glb');
 
-        if (id !== sessionId || current !== session) {
-          videoTexture.dispose();
-          videoMaterial.dispose();
-          return;
-        }
+        // Back was pressed while model was loading: never start this old session.
+        if (id !== sessionId || current !== session) return;
 
         const plane = gltf.scene;
         plane.traverse((o) => {
-          if (o.isMesh) o.material = videoMaterial;
+          if (o.isMesh) o.material = session.videoMaterial;
         });
 
-        const raw = new THREE.Box3()
-          .setFromObject(plane)
-          .getSize(new THREE.Vector3());
-
+        const raw = new THREE.Box3().setFromObject(plane).getSize(new THREE.Vector3());
         if (raw.y <= raw.x && raw.y <= raw.z) {
           plane.rotation.x = Math.PI / 2;
         } else if (raw.x <= raw.y && raw.x <= raw.z) {
@@ -224,47 +236,37 @@
           targetVisible = true;
           refresh();
         };
-
         anchor.onTargetLost = () => {
           if (id !== sessionId || current !== session) return;
           targetVisible = false;
           refresh();
         };
 
-        // Check cancellation before and after camera startup.
         if (id !== sessionId || current !== session) return;
 
-        await mindarThree.start();
+        // Keep the startup promise on the session so Back can wait for it.
+        session.startPromise = mindarThree.start();
+        await session.startPromise;
 
-        if (id !== sessionId || current !== session) {
-          try { await mindarThree.stop(); } catch (_) {}
-          renderer.setAnimationLoop(null);
-          return;
-        }
+        // If Back was pressed during camera startup, don't show or animate this session.
+        if (id !== sessionId || current !== session) return;
 
         controls.style.display = 'flex';
         renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
       } catch (error) {
         if (current === session) current = null;
-
-        try { await mindarThree.stop(); } catch (_) {}
-        try {
-          renderer.setAnimationLoop(null);
-          renderer.dispose();
-        } catch (_) {}
-
-        if (videoMaterial) videoMaterial.dispose();
-        else if (videoTexture) videoTexture.dispose();
-
+        await disposeSession(session);
+        try { session.videoMaterial?.dispose(); } catch (_) {}
+        try { session.videoTexture?.dispose(); } catch (_) {}
         throw error;
       }
     };
 
-    // ---- Stop the active session and return home ----
     const goHome = async () => {
-      // Invalidate in-flight startup immediately, before waiting for cleanup.
+      // Invalidate in-flight startup immediately.
       ++sessionId;
+      isClosing = true;
 
       video.pause();
       try { video.currentTime = 0; } catch (_) {}
@@ -272,33 +274,30 @@
       targetVisible = false;
       userPaused = false;
       playPauseBtn.textContent = 'Pause';
-
       controls.style.display = 'none';
       startBtn.disabled = true;
       startBtn.textContent = 'Closing scanner...';
 
-      // Serialize cleanup so two Back clicks cannot overlap teardown.
+      // Serialize teardown; repeated Back taps won't race each other.
       cleanupPromise = cleanupPromise.then(async () => {
         const session = current;
         current = null;
 
-        if (session) {
-          try {
-            await session.mindarThree.stop();
-          } catch (error) {
-            console.warn('AR stop:', error);
-          }
+        await disposeSession(session);
 
-          try {
-            session.renderer.setAnimationLoop(null);
-            session.renderer.dispose();
-          } catch (error) {
-            console.warn('Renderer cleanup:', error);
-          }
-        }
+        // Stop any camera stream MindAR may have inserted while shutdown was pending.
+        stopCameraTracks();
 
-        // Remove the previous AR canvas and any remaining scanner elements.
+        // Remove MindAR's canvas, camera video, and leftover scan UI.
         container.replaceChildren();
+        document.querySelectorAll('video').forEach((el) => {
+          if (el !== video && el.srcObject) {
+            try { el.srcObject.getTracks().forEach((track) => track.stop()); } catch (_) {}
+            try { el.pause(); } catch (_) {}
+            try { el.srcObject = null; } catch (_) {}
+            el.remove();
+          }
+        });
       });
 
       await cleanupPromise;
@@ -306,21 +305,25 @@
       splash.classList.remove('hide');
       startBtn.disabled = false;
       startBtn.textContent = 'Tap to Scan';
+      isClosing = false;
     };
 
     backBtn.addEventListener('click', () => {
-      goHome().catch((error) => console.error('Could not close scanner:', error));
+      goHome().catch((error) => {
+        console.error('Scanner cleanup failed:', error);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Tap to Scan';
+      });
     });
 
-    // ---- Tap to Scan ----
     startBtn.addEventListener('click', async () => {
-      if (startBtn.disabled) return;
+      if (startBtn.disabled || isClosing) return;
 
       startBtn.disabled = true;
       startBtn.textContent = 'Loading...';
       const id = ++sessionId;
 
-      // Unlock video playback on mobile browsers.
+      // Mobile browser video unlock; does not request camera access.
       video.play().then(() => video.pause()).catch(() => {});
 
       try {
@@ -331,21 +334,15 @@
         await start(id);
 
         if (id !== sessionId) return;
+        startBtn.textContent = 'Tap to Scan';
       } catch (error) {
         console.error(error);
-
         if (id === sessionId) {
           await goHome();
           alert('Camera access Allow pannitu marubadiyum try pannunga');
         }
-        return;
-      }
-
-      if (id === sessionId) {
-        startBtn.textContent = 'Tap to Scan';
       }
     });
   </script>
 </body>
 </html>
-
