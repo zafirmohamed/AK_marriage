@@ -15,36 +15,28 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       transition: opacity 0.6s ease;
+      overflow: hidden;
     }
     #splash.hide { opacity: 0; pointer-events: none; }
 
-    /* Gold sparkles top and bottom */
-    .spark {
-      position: absolute; left: 0; width: 100%; height: 32vh;
-      pointer-events: none;
+    /* Full screen gif background (center la maximize) */
+    #bgGif {
+      position: absolute; inset: 0;
+      overflow: hidden; pointer-events: none;
+    }
+    #bgGif::after {
+      content: ""; position: absolute; top: 0; left: 0;
+      width: 118%; height: 118%;   /* gif ah konjam perusa vachi keela-valathu corner (watermark) screen ku veliya thallum */
       background: url('sparkle.gif') center / cover no-repeat;
     }
-    .spark.top { top: 0; }
-    .spark.bottom { bottom: 0; transform: scaleY(-1); }   /* same gif, keela flip */
-
-    /* CSS twinkle sparkles (gif illaina idhu fallback. Gif perfect ah irundha indha block ah delete pannalam) */
-    .spark::before {
-      content: ""; position: absolute; inset: 0;
-      background:
-        radial-gradient(circle at 10% 25%, rgba(255,200,90,.95) 0 2px, transparent 3px),
-        radial-gradient(circle at 24% 62%, rgba(255,215,120,.9) 0 3px, transparent 4px),
-        radial-gradient(circle at 38% 18%, rgba(255,190,70,.9) 0 2px, transparent 3px),
-        radial-gradient(circle at 52% 70%, rgba(255,220,130,.95) 0 2px, transparent 3px),
-        radial-gradient(circle at 66% 30%, rgba(255,200,90,.9) 0 3px, transparent 4px),
-        radial-gradient(circle at 80% 60%, rgba(255,215,120,.95) 0 2px, transparent 3px),
-        radial-gradient(circle at 92% 20%, rgba(255,190,70,.9) 0 2px, transparent 3px);
-      animation: twinkle 2.4s ease-in-out infinite alternate;
-    }
-    @keyframes twinkle { from { opacity: .25; } to { opacity: 1; } }
 
     /* Logo */
-    #logo { width: min(70vw, 340px); height: auto; display: block; }
+    #logo {
+      position: relative; z-index: 1;
+      width: min(70vw, 340px); height: auto; display: block;
+    }
     .logoText {
+      position: relative; z-index: 1;
       color: #d9ad63; text-align: center;
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 54px; letter-spacing: 10px; line-height: 1;
@@ -53,6 +45,7 @@
 
     /* Gold button */
     #startBtn {
+      position: relative; z-index: 1;
       margin-top: 16vh;
       padding: 14px 34px; font-size: 20px; font-weight: 600;
       border: none; border-radius: 12px;
@@ -92,8 +85,7 @@
 
   <!-- START SCREEN -->
   <div id="splash">
-    <div class="spark top"></div>
-    <div class="spark bottom"></div>
+    <div id="bgGif"></div>
 
     <img id="logo" src="logo.png" alt="ZOAR FRAMES"
          onerror="this.outerHTML='<div class=&quot;logoText&quot;>ZOAR<small>FRAMES</small></div>'">
