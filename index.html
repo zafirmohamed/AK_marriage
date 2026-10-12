@@ -2,21 +2,67 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AR Video</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ZOAR Frames AR</title>
   <style>
-    body { margin: 0; }
+    body { margin: 0; background: #000; }
     #container { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
 
-    #startBtn {
-      position: absolute; z-index: 10;
-      top: 50%; left: 50%; transform: translate(-50%, -50%);
-      padding: 16px 28px; font-size: 18px;
-      border: none; border-radius: 12px;
-      background: #4f46e5; color: #fff;
+    /* ================= START SCREEN ================= */
+    #splash {
+      position: fixed; inset: 0; z-index: 20;
+      background: #000;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.6s ease;
     }
+    #splash.hide { opacity: 0; pointer-events: none; }
 
-    /* NEW: Play/Pause + Restart buttons */
+    /* Gold sparkles top and bottom */
+    .spark {
+      position: absolute; left: 0; width: 100%; height: 32vh;
+      pointer-events: none;
+      background: url('sparkle.gif') center / cover no-repeat;
+    }
+    .spark.top { top: 0; }
+    .spark.bottom { bottom: 0; transform: scaleY(-1); }   /* same gif, keela flip */
+
+    /* CSS twinkle sparkles (gif illaina idhu fallback. Gif perfect ah irundha indha block ah delete pannalam) */
+    .spark::before {
+      content: ""; position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 10% 25%, rgba(255,200,90,.95) 0 2px, transparent 3px),
+        radial-gradient(circle at 24% 62%, rgba(255,215,120,.9) 0 3px, transparent 4px),
+        radial-gradient(circle at 38% 18%, rgba(255,190,70,.9) 0 2px, transparent 3px),
+        radial-gradient(circle at 52% 70%, rgba(255,220,130,.95) 0 2px, transparent 3px),
+        radial-gradient(circle at 66% 30%, rgba(255,200,90,.9) 0 3px, transparent 4px),
+        radial-gradient(circle at 80% 60%, rgba(255,215,120,.95) 0 2px, transparent 3px),
+        radial-gradient(circle at 92% 20%, rgba(255,190,70,.9) 0 2px, transparent 3px);
+      animation: twinkle 2.4s ease-in-out infinite alternate;
+    }
+    @keyframes twinkle { from { opacity: .25; } to { opacity: 1; } }
+
+    /* Logo */
+    #logo { width: min(70vw, 340px); height: auto; display: block; }
+    .logoText {
+      color: #d9ad63; text-align: center;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 54px; letter-spacing: 10px; line-height: 1;
+    }
+    .logoText small { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 8px; }
+
+    /* Gold button */
+    #startBtn {
+      margin-top: 16vh;
+      padding: 14px 34px; font-size: 20px; font-weight: 600;
+      border: none; border-radius: 12px;
+      color: #1c1306;
+      background: linear-gradient(180deg, #ebc47e, #cc9d57);
+      box-shadow: 0 0 22px rgba(224, 178, 100, 0.35);
+    }
+    #startBtn:disabled { opacity: 0.7; }
+
+    /* ================= PLAY/PAUSE + RESTART ================= */
     #controls {
       position: fixed; z-index: 10;
       left: 50%; transform: translateX(-50%);
@@ -43,9 +89,19 @@
 
 <body>
   <div id="container"></div>
-  <button id="startBtn">Tap to Start AR</button>
 
-  <!-- NEW: control buttons -->
+  <!-- START SCREEN -->
+  <div id="splash">
+    <div class="spark top"></div>
+    <div class="spark bottom"></div>
+
+    <img id="logo" src="logo.png" alt="ZOAR FRAMES"
+         onerror="this.outerHTML='<div class=&quot;logoText&quot;>ZOAR<small>FRAMES</small></div>'">
+
+    <button id="startBtn">Tap to Scan</button>
+  </div>
+
+  <!-- control buttons -->
   <div id="controls">
     <button id="playPauseBtn">Pause</button>
     <button id="restartBtn">Restart</button>
@@ -68,7 +124,7 @@
     video.setAttribute('playsinline', '');
     video.preload = 'auto';
 
-    // ---- NEW: Play / Pause / Restart logic ----
+    // ---- Play / Pause / Restart logic ----
     let targetVisible = false;   // image ippo theriyudha
     let userPaused = false;      // user Pause click pannirukkaara
 
@@ -157,7 +213,7 @@
 
       await mindarThree.start();
 
-      // NEW: AR start aana apram buttons kaattum
+      // AR start aana apram buttons kaattum
       document.querySelector('#controls').style.display = 'flex';
 
       renderer.setAnimationLoop(() => {
@@ -166,10 +222,26 @@
     };
 
     // Tap pannina apram start (mobile la video unlock ku must)
-    document.querySelector('#startBtn').addEventListener('click', () => {
-      document.querySelector('#startBtn').style.display = 'none';
+    const startBtn = document.querySelector('#startBtn');
+    const splash = document.querySelector('#splash');
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Loading...';
+
+      // Video unlock: click kulla, await ku munnadi irukkanum
       video.play().then(() => video.pause()).catch(() => {});
-      start();
+
+      try {
+        await start();                       // camera + model ready aana apram
+        splash.classList.add('hide');        // start screen fade out
+        setTimeout(() => splash.remove(), 700);
+      } catch (e) {
+        console.error(e);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Tap to Scan';
+        alert('Camera access Allow pannitu marubadiyum try pannunga');
+      }
     });
   </script>
 </body>
